@@ -52,3 +52,14 @@ class SimpleTFIDFVectorizer:
             tfidf_matrix.append(doc_vector)
 
         return tfidf_matrix
+
+    # Add this method inside the SimpleTFIDFVectorizer class in SimpleTFIDF.py
+    def cosine_similarity(self, vec1, vec2):
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        norm_a = math.sqrt(sum(a * a for a in vec1))
+        norm_b = math.sqrt(sum(b * b for b in vec2))
+        if norm_a == 0 or norm_b == 0:
+            return 0
+        else:
+            return dot_product / (norm_a * norm_b)
+
