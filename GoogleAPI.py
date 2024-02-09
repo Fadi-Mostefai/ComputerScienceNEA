@@ -1,4 +1,5 @@
 import tkinter as tk
+import webbrowser
 from tkinter import ttk, scrolledtext
 from tkhtmlview import HTMLLabel
 import pandas as pd
@@ -35,20 +36,29 @@ class GoogleGUI:
         self.result_text = scrolledtext.ScrolledText(self.root, height=15, width=80, wrap=tk.WORD)
         self.result_text.pack()
 
+        self.results_display = HTMLLabel(self.root, html="<html><body></body></html>")
+        self.results_display.pack(fill="both", expand=True)
+        self.results_display.bind("<Hyperlink>", self.on_link_click)
+
     def perform_search(self):
         query = self.query_entry.get()
         search_results = self.search_engine.search(query)
         self.format_google_results(search_results)
 
-    def format_google_results(self, results):
-        self.result_text.delete(1.0, tk.END)
-        for index, result in enumerate(results, start=1):
-            title = result.get('title', 'No title')
-            link = result.get('link', 'No link')
-            snippet = result.get('snippet', 'No snippet')
-            display_text = f"{index}. {title}\n{link}\n{snippet}\n\n"
-            self.result_text.insert(tk.END, display_text)
-            # Note: The hyperlink functionality needs to be adapted for use in scrolledtext, which might not directly support HTMLLabel.
+    def display_results(self, results):
+        html_content = "<html><body>"
+        for item in results:
+            title = item['title']
+            link = item['link']
+            html_content += f'<a href="{link}" target="_blank">{title}</a><br>'
+        html_content += "</body></html>"
+
+        self.results_display.set_html(html_content)
+
+    # Method to open clicked links in a web browser
+    def on_link_click(self, event):
+        print(event)  # This will help you understand the structure of the event object.
+        webbrowser.open(event.correct_attribute_for_url)
 
     def run(self):
         self.root.mainloop()
