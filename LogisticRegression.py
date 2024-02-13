@@ -1,10 +1,11 @@
 import numpy as np
 
 class LogisticRegression:
-    def __init__(self, learning_rate=0.01, n_iters=1000):
-        self.lr = learning_rate
+    def __init__(self, learning_rate=0.01, n_iters=1000, lambda_param=0.1):
+        self.learning_rate = learning_rate
         self.n_iters = n_iters
-        self.weights = None  # Consider initializing with zeros based on input feature size if necessary
+        self.lambda_param = lambda_param
+        self.weights = None
         self.bias = None
 
     def fit(self, X, y):
@@ -12,24 +13,30 @@ class LogisticRegression:
         self.weights = np.zeros(n_features)
         self.bias = 0
 
-        # Gradient Descent
+        # Gradient descent
         for _ in range(self.n_iters):
             model = np.dot(X, self.weights) + self.bias
-            y_predicted = self._sigmoid(model)
-            dw = (1 / n_samples) * np.dot(X.T, (y_predicted - y))
-            db = (1 / n_samples) * np.sum(y_predicted - y)
+            predictions = self._sigmoid(model)
 
-            self.weights -= self.lr * dw
-            self.bias -= self.lr * db
+            # Partial derivatives
+            dw = (1 / n_samples) * np.dot(X.T, (predictions - y)) + (self.lambda_param / n_samples) * self.weights
+            db = (1 / n_samples) * np.sum(predictions - y)
 
-    def predict(self, X):
+            # Update parameters
+            self.weights -= self.learning_rate * dw
+            self.bias -= self.learning_rate * db
+
+    def predict_proba(self, X):
         model = np.dot(X, self.weights) + self.bias
-        y_predicted = self._sigmoid(model)
-        y_predicted_cls = [1 if i > 0.5 else 0 for i in y_predicted]
-        return y_predicted_cls
+        predictions = self._sigmoid(model)
+        return predictions
 
-    def _sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
+    def predict(self, X, threshold=0.5):
+        probabilities = self.predict_proba(X)
+        return [1 if i > threshold else 0 for i in probabilities]
+
+    def _sigmoid(self, z):
+        return 1 / (1 + np.exp(-z))
 
 
 
