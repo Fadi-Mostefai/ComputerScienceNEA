@@ -43,22 +43,36 @@ class GoogleGUI:
     def perform_search(self):
         query = self.query_entry.get()
         search_results = self.search_engine.search(query)
-        self.format_google_results(search_results)
+        self.display_results(search_results)
 
-    def display_results(self, results):
-        html_content = "<html><body>"
-        for item in results:
-            title = item['title']
-            link = item['link']
-            html_content += f'<a href="{link}" target="_blank">{title}</a><br>'
-        html_content += "</body></html>"
+    def display_results_window(self, results):
+        results_window = tk.Toplevel(self.root)
+        results_window.title("Search Results")
+        listbox = tk.Listbox(results_window, width=100, height=20)
+        scrollbar = tk.Scrollbar(results_window, orient="vertical")
+        listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        listbox.pack(side="left", fill="both", expand=True)
 
-        self.results_display.set_html(html_content)
+        # Store links in a list for later retrieval
+        self.links = []
+        for result in results:
+            listbox.insert(tk.END, result['title'])
+            self.links.append(result['link'])
+
+        # Bind the listbox select event to the open_link method
+        listbox.bind('<<ListboxSelect>>', self.open_link)
 
     # Method to open clicked links in a web browser
-    def on_link_click(self, event):
-        print(event)  # This will help you understand the structure of the event object.
-        webbrowser.open(event.correct_attribute_for_url)
+    def open_link(self, event):
+        # Get the index of the selected link
+        widget = event.widget
+        index = int(widget.curselection()[0])
+        link = self.links[index]
+
+        # Open the link in the default web browser
+        webbrowser.open(link)
 
     def run(self):
         self.root.mainloop()
