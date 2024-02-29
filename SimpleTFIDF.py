@@ -2,11 +2,15 @@ import math
 
 class SimpleTFIDFVectorizer:
     def __init__(self, max_features=None):
-        self.max_features = max_features  # Optional max_features which limits the number of top features (terms) to consider based on their term frequency across the document corpus.
-        self.vocab = {}  # A dictionary to store the vocabulary (unique terms) and their indices.
-        self.idf = {}  # A dictionary to store the inverse document frequency values for each term.
+        # Optional max_features which limits the number of top features (terms) to consider based on their term frequency across the document corpus.
+        self.max_features = max_features
+        # A dictionary to store the vocabulary (unique terms) and their indices.
+        self.vocab = {}
+        # A dictionary to store the inverse document frequency values for each term.
+        self.idf = {}
 
-    # A convenience method that first fits the vectorizer to the documents (building the vocabulary and computing IDF values) and then transforms the documents into their TF-IDF representation.
+    # A convenience method that first fits the vectorizer to the documents (building the vocabulary and computing IDF values) and then
+    # transforms the documents into their TF-IDF representation.
     def fit_transform(self, documents):
         self.fit(documents)
         return self.transform(documents)
