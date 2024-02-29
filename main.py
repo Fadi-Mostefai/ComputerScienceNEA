@@ -1,142 +1,150 @@
 import tkinter as tk
-from tkinter import simpledialog, messagebox, Frame, Label, Entry, Button, Listbox, Toplevel
+from tkinter import messagebox, simpledialog
 import pandas as pd
-from LogisticRegression import LogisticRegression  # Ensure this is correctly implemented
-from GoogleAPI import GoogleSearch  # Ensure this is correctly implemented
-from preprocessing import DataPreprocessor  # Ensure this is correctly implemented
-from SimpleTFIDF import SimpleTFIDFVectorizer  # Ensure this class is updated as discussed
+import numpy as np
+from LogisticRegression import LogisticRegression
+from GoogleAPI import GoogleGUI
+from preprocessing import DataPreprocessor
+from SimpleTFIDF import SimpleTFIDFVectorizer
 
 
 class MainApplication:
     def __init__(self, root):
         self.root = root
         self.root.title("Query Application")
-
-        # Initialize data preprocessor
+        self.setup_initial_menu()
         self.data_preprocessor = DataPreprocessor()
+        self.model = LogisticRegression(learning_rate=0.01, n_iters=1000, lambda_param=0.1)
+        self.tfidf_vectorizer = SimpleTFIDFVectorizer()
+        self.model_initialised = False
 
-        # Load and prepare data
-        self.questions_path = 'New Questions.xlsx'
-        self.answers_path = 'New Answers.xlsx'
-        self.X, self.y = self.data_preprocessor.load_and_prepare_data(self.questions_path, self.answers_path)
+    def lazy_load_model(self):
+        if not self.model_initialised:
+            self.model = LogisticRegression(learning_rate=0.01, n_iters=1000, lambda_param=0.1)
+            self.train_model()
+            self.model_initialised = True
 
-        # Initialize and fit the logistic regression model with the prepared data
-        self.model = LogisticRegression()
-        self.model.fit(self.X, self.y)
+    def train_model(self):
+        questions_df = pd.read_excel("New Questions.xlsx")
+        answers_df = pd.read_excel("New Answers.xlsx")
 
-        # Initialize Google Search with API keys
-        self.google_search = GoogleSearch("AIzaSyCbtBcWEqXQXjK4yaOkN24TIsnkgrsKxkg", "42059fbb7eb1e44ad")
+        # Preprocess questions
+        questions_df['processed_text'] = questions_df['Body'].apply(self.data_preprocessor.clean_text)
 
-        # When initializing SimpleTFIDFVectorizer in main.py, set max_features to limit vocabulary size
-        self.tfidf_vectorizer = SimpleTFIDFVectorizer(max_features=1000)  # Example: limit to top 1000 terms
+        # Fit and transform questions using TFIDF Vectorizer
+        self.tfidf_vectorizer.fit(questions_df['processed_text'])
+        X = self.tfidf_vectorizer.transform(questions_df['processed_text'])
 
-        # Setup UI components
-        self.setup_ui()
+        # Assuming 'Score' is used as a binary label for simplicity
+        y = questions_df['Score'].values
 
-    def setup_ui(self):
-        # UI setup for Google Search
-        self.google_frame = Frame(self.root)
-        self.google_label = Label(self.google_frame, text="Google Search")
-        self.google_label.pack(side=tk.TOP)
-        self.google_search_entry = Entry(self.google_frame, width=50)
-        self.google_search_entry.pack(side=tk.LEFT)
-        self.google_search_button = Button(self.google_frame, text="Search", command=self.perform_google_search)
-        self.google_search_button.pack(side=tk.LEFT)
-        self.google_frame.pack(pady=10)
+        # Train the logistic regression model
+        self.model.fit(X, y)
 
-        # UI setup for Neural Network Query
-        self.nn_frame = Frame(self.root)
-        self.nn_label = Label(self.nn_frame, text="Neural Network Query")
-        self.nn_label.pack(side=tk.TOP)
-        self.nn_query_entry = Entry(self.nn_frame, width=50)
-        self.nn_query_entry.pack(side=tk.LEFT)
-        self.nn_query_button = Button(self.nn_frame, text="Query", command=self.neural_network_query)
-        self.nn_query_button.pack(side=tk.LEFT)
-        self.nn_frame.pack(pady=10)
+        # Store answers for later use
+        self.answers_df = answers_df
 
-    def perform_google_search(self):
-        query = self.google_search_entry.get()
-        results = self.google_search.search(query)
-        self.display_results(results)
+    def setup_initial_menu(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.root.geometry("400x200")
 
-    def display_results(self, results):
-        result_window = Toplevel(self.root)
-        result_window.title("Search Results")
-        listbox = Listbox(result_window, width=100, height=20)
-        listbox.pack(fill=tk.BOTH, expand=True)
-        for result in results:
-            listbox.insert(tk.END, result['title'])
+        button_google_search = tk.Button(self.root, text="Google Search", command=self.initiate_google_search)
+        button_google_search.pack(pady=10)
 
-    def neural_network_query(self):
-        query = self.nn_query_entry.get()
+        button_nn_query = tk.Button(self.root, text="Neural Network Query", command=lambda: self.setup_nn_query_ui())
+        button_nn_query.pack(pady=10)
+
+    def initiate_google_search(self):
+        self.change_window(GoogleGUI, "Google Search")
+
+    def setup_nn_query_ui(self):
+        self.change_window(self.nn_query_gui_setup, "Neural Network Query")
+
+    def change_window(self, gui_setup_func, title):
+        self.root.withdraw()
+        new_window = tk.Toplevel()
+        new_window.title(title)
+        new_window.geometry("800x600")
+        if gui_setup_func == GoogleGUI:
+            gui_setup_func(new_window, "AIzaSyCbtBcWEqXQXjK4yaOkN24TIsnkgrsKxkg", "42059fbb7eb1e44ad", self.back_to_main_menu)
+        else:
+            gui_setup_func(new_window)
+
+    def nn_query_gui_setup(self, root):
+        self.lazy_load_model()  # Load and train the model only when needed
+        self.change_window(self.nn_query_gui_setup, "Neural Network Query")
+
+        query_label = tk.Label(root, text="Enter your query:")
+        query_label.pack(pady=5)
+
+        query_entry = tk.Entry(root, width=50)
+        query_entry.pack(pady=5)
+
+        query_button = tk.Button(root, text="Submit Query",
+                                 command=lambda: self.neural_network_query(query_entry.get(), root))
+        query_button.pack(pady=10)
+
+        back_button = tk.Button(root, text="Back to Main Menu", command=lambda: self.back_to_main_menu(root))
+        back_button.pack(side=tk.LEFT, padx=(20, 10), pady=20)
+
+        exit_button = tk.Button(root, text="Exit", command=lambda: self.exit_app(root))
+        exit_button.pack(side=tk.RIGHT, padx=(10, 20), pady=20)
+
+    def neural_network_query(self, query, root):
+
+        processed_query = self.data_preprocessor.clean_text(query)
+        query_vector = self.tfidf_vectorizer.transform([processed_query])[0]
+        prediction = self.model.predict(np.array([query_vector]))[0]
+
+        # Use prediction to find the best answer
         selected_answer = self.select_answer_based_on_query(query)
         messagebox.showinfo("Predicted Answer", selected_answer)
 
-        user_score = simpledialog.askinteger("Rate the Answer", "Please rate the answer out of 100:", minvalue=0,
-                                             maxvalue=100)
-
-        if user_score is not None:
-            self.update_excel_files(query, selected_answer, user_score)
-
     def select_answer_based_on_query(self, query):
-        # Fit TF-IDF Vectorizer with questions and the query
-        documents = pd.read_excel(self.questions_path)['Title'].tolist() + [query]
-        tfidf_matrix = self.tfidf_vectorizer.fit_transform(documents)
-
-        # Calculate cosine similarity between the query and all questions
+        documents = pd.read_excel("New Questions.xlsx")['Title'].tolist() + [query]
+        tfidf_matrix = SimpleTFIDFVectorizer.fit_transform(documents)
         query_vector = tfidf_matrix[-1]
         question_vectors = tfidf_matrix[:-1]
-        similarities = [self.tfidf_vectorizer.cosine_similarity(query_vector, vec) for vec in question_vectors]
-
-        # Adjust similarity scores based on a threshold or modify the selection criteria as needed
-
-        # Find the index of the most similar question
+        similarities = [SimpleTFIDFVectorizer.cosine_similarity(query_vector, vec) for vec in question_vectors]
         idx = similarities.index(max(similarities))
-
-        # Load questions and answers DataFrames
-        questions_df = pd.read_excel(self.questions_path)
-        answers_df = pd.read_excel(self.answers_path)
-
-        # Filter answers for the selected question, excluding those with a score < 0
+        questions_df = pd.read_excel("New Questions.xlsx")
+        answers_df = pd.read_excel("New Answers.xlsx")
         question_id = questions_df.iloc[idx]['Id']
         relevant_answers = answers_df[(answers_df['ParentId'] == question_id) & (answers_df['Score'] > 0)]
-
-        # If there are relevant answers, select the one with the highest score
         if not relevant_answers.empty:
             top_answer = relevant_answers.loc[relevant_answers['Score'].idxmax()]['Body']
         else:
             top_answer = "Sorry, I couldn't find a relevant answer for your query."
-
         return top_answer
 
     def update_excel_files(self, question, answer, score):
-        # Load existing data
-        questions_df = pd.read_excel(self.questions_path)
-        answers_df = pd.read_excel(self.answers_path)
-
-        # Generate a new question ID
+        questions_df = pd.read_excel("New Questions.xlsx")
+        answers_df = pd.read_excel("New Answers.xlsx")
         new_question_id = questions_df['Id'].max() + 1 if not questions_df.empty else 1
-
-        # Create new question DataFrame and append
         new_question_df = pd.DataFrame([{'Id': new_question_id, 'Score': score, 'Title': question, 'Body': question}])
         questions_df = pd.concat([questions_df, new_question_df], ignore_index=True)
-
-        # Generate a new answer ID
         new_answer_id = answers_df['Id'].max() + 1 if not answers_df.empty else 1
-
-        # Create new answer DataFrame and append
         new_answer_df = pd.DataFrame(
             [{'Id': new_answer_id, 'ParentId': new_question_id, 'Score': score, 'Body': answer}])
         answers_df = pd.concat([answers_df, new_answer_df], ignore_index=True)
+        questions_df.to_excel("New Questions.xlsx", index=False)
+        answers_df.to_excel("New Answers.xlsx", index=False)
 
-        # Save updated DataFrames back to Excel
-        questions_df.to_excel(self.questions_path, index=False)
-        answers_df.to_excel(self.answers_path, index=False)
+    def back_to_main_menu(self, root):
+        root.destroy()
+        main_root = tk.Tk()
+        MainApplication(main_root)
+        main_root.mainloop()
+
+    def exit_app(self, root):
+        root.destroy()
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = MainApplication(root)
     root.mainloop()
+
 
 
