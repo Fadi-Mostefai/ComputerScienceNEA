@@ -1,0 +1,95 @@
+@startuml
+
+scale 800 width
+
+package "main.py" {
+    class MainApplication {
+        -root: tk.Tk
+        -data_preprocessor: DataPreprocessor
+        -model: LogisticRegression
+        -tfidf_vectorizer: SimpleTFIDFVectorizer
+        -model_initialised: bool
+        +__init__(root: tk.Tk)
+        +lazy_load_model()
+        +train_model()
+        +setup_initial_menu()
+        +initiate_google_search()
+        +setup_nn_query_ui()
+        +change_window(gui_setup_func: Function, title: String)
+        +nn_query_gui_setup(root: tk.Tk)
+        +neural_network_query(query: String, root: tk.Tk)
+        +select_answer_based_on_query(query: String): String
+        +update_excel_files(question: String, answer: String, score: int)
+        +back_to_main_menu(root: tk.Tk)
+        +exit_app(root: tk.Tk)
+    }
+}
+
+package "GoogleAPI.py" {
+    class GoogleSearch {
+        -api_key: String
+        -cse_id: String
+        +search(search_term: String, num_results: int): List
+    }
+
+    class GoogleGUI {
+        -root: tk.Tk
+        -search_engine: GoogleSearch
+        -main_app: MainApplication
+        -url_map: dict
+        +__init__(root: tk.Tk, api_key: String, cse_id: String, main_app: MainApplication)
+        +setup_ui()
+        +perform_search()
+        +display_results(results: List)
+        +on_result_select(evt: Event)
+        +back_to_main_menu()
+    }
+}
+
+package "LogisticRegression.py" {
+    class LogisticRegression {
+        -learning_rate: float
+        -n_iters: int
+        -lambda_param: float
+        -weights: np.ndarray
+        -bias: float
+        +__init__(learning_rate: float, n_iters: int, lambda_param: float)
+        +fit(X: np.ndarray, y: np.ndarray)
+        +predict_proba(X: np.ndarray): np.ndarray
+        +predict(X: np.ndarray, threshold: float): np.ndarray
+        +_sigmoid(z: np.ndarray): np.ndarray
+    }
+}
+
+package "SimpleTFIDF.py" {
+    class SimpleTFIDFVectorizer {
+        -max_features: int
+        -vocab: dict
+        -idf: dict
+        +__init__(max_features: int)
+        +fit_transform(documents: List): List
+        +fit(documents: List)
+        +transform(documents: List): List
+        +cosine_similarity(vec1: List, vec2: List): float
+    }
+}
+
+package "preprocessing.py" {
+    class DataPreprocessor {
+        -vocab: dict
+        +__init__()
+        +clean_text(text: String): String
+        +vectorize_text(text: String): np.ndarray
+        +load_and_prepare_data(questions_path: String, answers_path: String): (np.ndarray, np.ndarray)
+    }
+}
+
+MainApplication --> "1" DataPreprocessor
+MainApplication --> "1" LogisticRegression
+MainApplication --> "1" SimpleTFIDFVectorizer
+MainApplication --> "0..*" GoogleGUI : creates
+GoogleGUI --> "1" GoogleSearch
+
+@enduml
+
+
