@@ -1,72 +1,86 @@
 import math
+import numpy as np
 
+
+# Implements a simple TF-IDF (Term Frequency-Inverse Document Frequency) vectorizer.
 class SimpleTFIDFVectorizer:
     def __init__(self, max_features=None):
-        # Optional max_features which limits the number of top features (terms) to consider based on their term frequency across the document corpus.
         self.max_features = max_features
-        # A dictionary to store the vocabulary (unique terms) and their indices.
         self.vocab = {}
-        # A dictionary to store the inverse document frequency values for each term.
         self.idf = {}
 
-    # A convenience method that first fits the vectorizer to the documents (building the vocabulary and computing IDF values) and then
-    # transforms the documents into their TF-IDF representation.
+    # Fits the vectorizer to the documents and transforms the documents into TF-IDF vectors in a single step.
     def fit_transform(self, documents):
         self.fit(documents)
         return self.transform(documents)
 
-    # A method which processes a list of documents to build the model's vocabulary and compute the IDF for each term.
+    # Computes the IDF values for all terms in the documents.
     def fit(self, documents):
-        term_count = {}
+        term_df = {}
         total_documents = len(documents)
 
-        # Build term frequency (TF) and document frequency (DF) for each term
+        # Build document frequency (DF) for each term
         for doc in documents:
-            unique_terms = set(doc.split())
-            for term in unique_terms:
-                term_count[term] = term_count.get(term, 0) + 1
+            seen_terms = set()
+            for term in doc.split():
+                if term not in seen_terms:
+                    term_df[term] = term_df.get(term, 0) + 1
+                    seen_terms.add(term)
 
-        # Calculate Inverse Document Frequency (IDF)
-        self.idf = {term: math.log(total_documents / (1 + term_count[term])) for term in term_count}
+        # Calculate IDF for each term
+        self.idf = {term: math.log((1 + total_documents) / (1 + df)) + 1 for term, df in term_df.items()}
 
-        # Select top features based on max_features
+        # Handle max_features
         if self.max_features:
-            sorted_terms = sorted(term_count.keys(), key=lambda x: term_count[x], reverse=True)
-            selected_features = sorted_terms[:self.max_features]
-            self.vocab = {term: index for index, term in enumerate(selected_features)}
+            # Sort terms by IDF values, prioritizing terms with higher IDF (rarer across documents)
+            sorted_terms = sorted(self.idf.items(), key=lambda item: item[1], reverse=True)
+            selected_terms = sorted_terms[:self.max_features]
+            self.vocab = {term: i for i, (term, _) in enumerate(selected_terms)}
         else:
-            self.vocab = {term: index for index, term in enumerate(term_count)}
+            self.vocab = {term: i for i, term in enumerate(self.idf.keys())}
 
-    # A method which transforms the documents into a matrix of TF-IDF features based on the previously built vocabulary and IDF values.
+    # Converts the list of documents into a matrix of TF-IDF features.
+    # It uses the IDF values computed in the fit step and term frequencies within each document to compute the TF-IDF scores.
     def transform(self, documents):
         tfidf_matrix = []
 
         for doc in documents:
             doc_vector = [0] * len(self.vocab)
+            term_tf = {}
 
-            # Calculate Term Frequency (TF) for each term in the document
-            term_count = {}
-            total_terms = len(doc.split())
-            for term in doc.split():
-                term_count[term] = term_count.get(term, 0) + 1
+            words = doc.split()
+            total_terms = len(words)
+            for term in words:
+                if term in self.vocab:
+                    term_tf[term] = term_tf.get(term, 0) + 1 / total_terms
 
-            # Calculate TF-IDF for each term in the document
-            for term, index in self.vocab.items():
-                tf = term_count.get(term, 0) / total_terms
-                idf = self.idf.get(term, 0)
-                doc_vector[index] = tf * idf
+            for term, tf in term_tf.items():
+                index = self.vocab.get(term)
+                if index is not None:
+                    idf = self.idf[term]
+                    doc_vector[index] = tf * idf
 
             tfidf_matrix.append(doc_vector)
 
-        return tfidf_matrix
-
-    # An additional method for calculating the cosine similarity between two vectors. This is useful for measuring the similarity between two documents.
+        return np.array(tfidf_matrix)
+    
+    # Computes the cosine similarity between two vectors
+    # This measure evaluates the cosine of the angle between two vectors projected in a multi-dimensional space,
+    # serving as an indication of similarity between two document vectors.
     def cosine_similarity(self, vec1, vec2):
-        dot_product = sum(a * b for a, b in zip(vec1, vec2))
-        norm_a = math.sqrt(sum(a * a for a in vec1))
-        norm_b = math.sqrt(sum(b * b for b in vec2))
-        if norm_a == 0 or norm_b == 0:
+        len_diff = abs(len(vec1) - len(vec2))
+        if len(vec1) < len(vec2):
+            vec1 = np.pad(vec1, (0, len_diff), 'constant')
+        elif len(vec2) < len(vec1):
+            vec2 = np.pad(vec2, (0, len_diff), 'constant')
+
+        dot_product = np.dot(vec1, vec2)
+        norm_vec1 = np.linalg.norm(vec1)
+        norm_vec2 = np.linalg.norm(vec2)
+        if norm_vec1 == 0 or norm_vec2 == 0:
             return 0
         else:
-            return dot_product / (norm_a * norm_b)
-        # Cosine similarity is calculated as the dot product of the vectors divided by the product of their norms (magnitudes).
+            return dot_product / (norm_vec1 * norm_vec2)
+
+
+

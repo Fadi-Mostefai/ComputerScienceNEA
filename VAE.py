@@ -1,113 +1,151 @@
-# VAE.py
-
 import numpy as np
 from vae_operations import VaeOperations
 
+# Defines a Variational Autoencoder.
 class VAE:
-    def __init__(self, input_dim, latent_dim, hidden_dims=None):
+    def __init__(self, input_dim, latent_dim=50, hidden_dims=None):
         self.input_dim = input_dim
         self.latent_dim = latent_dim
-        self.hidden_dims = hidden_dims or [256, 128]
-
+        self.hidden_dims = hidden_dims or [50, 50]
         self.weights = self.initialize_weights()
         self.biases = self.initialize_biases()
 
+    # Weights are initialized to random values based on a
+    # normal distribution scaled by the square root of 2 divided by the previous layer's dimension
     def initialize_weights(self):
         weights = {}
         prev_dim = self.input_dim
-        for i, hidden_dim in enumerate(self.hidden_dims):
-            weights[f"W{i+1}"] = np.random.randn(prev_dim, hidden_dim) * np.sqrt(2.0 / prev_dim)
-            prev_dim = hidden_dim
-        weights["mean"] = np.random.randn(self.hidden_dims[-1], self.latent_dim) * np.sqrt(2.0 / self.hidden_dims[-1])
-        weights["log_var"] = np.random.randn(self.hidden_dims[-1], self.latent_dim) * np.sqrt(2.0 / self.hidden_dims[-1])
-        weights["decoder"] = np.random.randn(self.latent_dim, self.input_dim) * np.sqrt(2.0 / self.latent_dim)
+
+        # Initialize encoder weights
+        for i, dim in enumerate(self.hidden_dims):
+            weights[f'W_encoder_{i + 1}'] = np.random.randn(prev_dim, dim) * np.sqrt(2. / prev_dim)
+            prev_dim = dim
+
+        # Initialize weights for mean and log variance vectors
+        weights['W_mean'] = np.random.randn(prev_dim, self.latent_dim) * np.sqrt(2. / prev_dim)
+        weights['W_log_var'] = np.random.randn(prev_dim, self.latent_dim) * np.sqrt(2. / prev_dim)
+
+        # Initialize decoder weights
+        decoder_dims = [self.latent_dim] + self.hidden_dims[::-1]  # Reverse hidden_dims for decoding
+        prev_dim = self.latent_dim
+        for i, dim in enumerate(decoder_dims):
+            weights[f'W_decoder_{i + 1}'] = np.random.randn(prev_dim, dim if i < len(
+                decoder_dims) - 1 else self.latent_dim) * np.sqrt(2. / prev_dim)
+            prev_dim = dim
+
         return weights
 
+    # Initialise biases and fill them with 0s
     def initialize_biases(self):
         biases = {}
-        for i, hidden_dim in enumerate(self.hidden_dims):
-            biases[f"b{i+1}"] = np.zeros(hidden_dim)
-        biases["mean"] = np.zeros(self.latent_dim)
-        biases["log_var"] = np.zeros(self.latent_dim)
-        biases["decoder"] = np.zeros(self.input_dim)
+        # Initialize encoder biases
+        for i, dim in enumerate(self.hidden_dims):
+            biases[f'b_encoder_{i + 1}'] = np.zeros(dim)
+
+        # Initialize biases for mean and log variance vectors
+        biases['b_mean'] = np.zeros(self.latent_dim)
+        biases['b_log_var'] = np.zeros(self.latent_dim)
+
+        # Initialize decoder biases
+        decoder_dims = [self.latent_dim] + self.hidden_dims[::-1]
+        for i, dim in enumerate(decoder_dims):
+            biases[f'b_decoder_{i + 1}'] = np.zeros(dim if i < len(decoder_dims) - 1 else self.latent_dim)
+
         return biases
 
+    # Processes the input X through the encoder network to produce mean and log variance vectors (mean, log_var).
     def encode(self, X):
+        hidden_activations = []
         hidden = X
-        for i, hidden_dim in enumerate(self.hidden_dims):
-            hidden = np.dot(hidden, self.weights[f"W{i+1}"]) + self.biases[f"b{i+1}"]
-            hidden = VaeOperations.relu(hidden)
-        mean = np.dot(hidden, self.weights["mean"]) + self.biases["mean"]
-        log_var = np.dot(hidden, self.weights["log_var"]) + self.biases["log_var"]
-        return mean, log_var
+        for i in range(len(self.hidden_dims)):
+            hidden = VaeOperations.relu(
+                np.dot(hidden, self.weights[f'W_encoder_{i + 1}']) + self.biases[f'b_encoder_{i + 1}'])
+            hidden_activations.append(hidden)
 
+        mean = np.dot(hidden, self.weights['W_mean']) + self.biases['b_mean']
+        log_var = np.dot(hidden, self.weights['W_log_var']) + self.biases['b_log_var']
+        return mean, log_var, hidden_activations
+
+    # Performs the "reparameterization trick" to sample from the latent space defined by mean and log_var,
+    # enabling gradient backpropagation through random sampling.
     def reparameterize(self, mean, log_var):
-        epsilon = np.random.randn(*mean.shape)
-        return mean + np.exp(0.5 * log_var) * epsilon
+        """Performs the reparameterization trick to sample from latent space."""
+        eps = np.random.normal(size=mean.shape)
+        return mean + np.exp(0.5 * log_var) * eps
 
+    # Takes a latent space vector z and processes it through the decoder network to reconstruct the input data.
     def decode(self, z):
-        return np.dot(z, self.weights["decoder"]) + self.biases["decoder"]
+        hidden = z
+        for i in range(len(self.hidden_dims) + 1):
+            hidden = np.dot(hidden, self.weights[f'W_decoder_{i + 1}']) + self.biases[f'b_decoder_{i + 1}']
+            if i < len(self.hidden_dims):
+                hidden = VaeOperations.relu(hidden)
+            else:
+                hidden = VaeOperations.sigmoid(hidden)
+        return hidden.reshape(-1, self.latent_dim)
 
-    def train(self, X, epochs=100, batch_size=32, learning_rate=0.001, lambda_param=0.001):
-        num_samples = X.shape[0]
-        num_batches = num_samples // batch_size
-
+    # Orchestrates the training process over a specified number of epochs, using mini-batch gradient descent with a given
+    # batch_size, learning_rate, and regularization strength lambda_param.
+    # It involves encoding inputs, reparameterization, decoding (reconstruction), and updating weights and biases
+    # based on gradients computed from the loss function.
+    def train(self, X, epochs, batch_size, learning_rate, lambda_param):
         for epoch in range(epochs):
-            # Shuffle the data for each epoch
             np.random.shuffle(X)
-
-            total_loss = 0.0
-            for batch_idx in range(num_batches):
-                # Extract the current mini-batch
-                start_idx = batch_idx * batch_size
-                end_idx = (batch_idx + 1) * batch_size
-                X_batch = X[start_idx:end_idx]
-
-                mean, log_var = self.encode(X_batch)
+            for i in range(0, X.shape[0], batch_size):
+                X_batch = X[i:i + batch_size]
+                mean, log_var, hidden_activations = self.encode(X_batch)  # Now also getting hidden_activations
                 z = self.reparameterize(mean, log_var)
-                X_pred = self.decode(z)
+                reconstructed_X = self.decode(z)
+                self.update_weights_gradients(X_batch, reconstructed_X, z, mean, log_var, hidden_activations, learning_rate, lambda_param)
 
-                reconstruction_loss = VaeOperations.mean_squared_error(X_batch, X_pred)
-                kl_divergence = -0.5 * np.sum(1 + log_var - np.square(mean) - np.exp(log_var), axis=1)
-                loss = np.mean(reconstruction_loss + kl_divergence) + VaeOperations.l2_regularization(self.weights,
-                                                                                                      lambda_param)
+    # Computes gradients and updates weights and biases for both encoder and decoder.
+    # This method utilizes the gradients of the reconstruction loss and the Kullback-Leibler (KL) divergence loss
+    # to perform the updates.
+    def update_weights_gradients(self, X_batch, reconstructed_X, z, mean, log_var, hidden_activations, learning_rate, lambda_param):
+        """Updates weights and biases based on gradients."""
+        batch_size = X_batch.shape[0]
 
-                dX_pred = VaeOperations.mean_squared_error_derivative(X_batch, X_pred)
-                d_mean = (mean - X_batch) / batch_size
-                d_log_var = (np.exp(log_var) - 1 - log_var + np.square(mean - X_batch)) / batch_size
+        # Compute gradients for the reconstruction loss
+        d_loss_recon = 2 * (reconstructed_X - X_batch) / batch_size  # Assuming MSE loss
 
-                d_weights_decoder = np.dot(z.T, dX_pred)
-                d_biases_decoder = np.sum(dX_pred, axis=0)
-                d_weights_mean = np.dot(X_batch.T, d_mean)
-                d_biases_mean = np.sum(d_mean, axis=0)
-                d_weights_log_var = np.dot(X_batch.T, d_log_var)
-                d_biases_log_var = np.sum(d_log_var, axis=0)
+        # Initialize the gradient of loss w.r.t. latent variable z
+        d_loss_z = d_loss_recon
 
-                self.weights["decoder"] -= learning_rate * d_weights_decoder
-                self.biases["decoder"] -= learning_rate * d_biases_decoder
-                self.weights["mean"] -= learning_rate * d_weights_mean
-                self.biases["mean"] -= learning_rate * d_biases_mean
-                self.weights["log_var"] -= learning_rate * d_weights_log_var
-                self.biases["log_var"] -= learning_rate * d_biases_log_var
+        hidden = hidden_activations[-1]
+        # Backpropagate through decoder
+        for i in reversed(range(len(self.hidden_dims) + 1)):
+            layer_key = f'W_decoder_{i + 1}'
+            bias_key = f'b_decoder_{i + 1}'
 
-                total_loss += loss
+            activation = z if i == 0 else np.tanh(np.dot(z if i == 1 else hidden, self.weights[f'W_decoder_{i}']))
+            grad_weights = np.dot(activation.T, d_loss_z) / batch_size
+            grad_biases = np.sum(d_loss_z, axis=0) / batch_size
 
-            # Compute the average loss for the epoch
-            avg_loss = total_loss / num_batches
+            # Update weights and biases
+            self.weights[layer_key] -= learning_rate * grad_weights + lambda_param * self.weights[layer_key]
+            self.biases[bias_key] -= learning_rate * grad_biases + lambda_param * self.biases[bias_key]
 
-            print(f"Epoch {epoch + 1}/{epochs}, Average Loss: {avg_loss}")
+            if i > 0:
+                d_loss_z = np.dot(d_loss_z, self.weights[layer_key].T) * (1 - np.tanh(activation) ** 2)  # Derivative of tanh for activation function
 
+        # Compute gradients for KL divergence loss
+        d_kl_mean = mean / batch_size
+        d_kl_log_var = (np.exp(log_var) - 1) / batch_size
+
+        # Update weights and biases for mean and log variance
+        self.weights['W_mean'] -= learning_rate * np.dot(hidden.T, d_kl_mean) + lambda_param * self.weights['W_mean']
+        self.biases['b_mean'] -= learning_rate * np.sum(d_kl_mean, axis=0) + lambda_param * self.biases['b_mean']
+        self.weights['W_log_var'] -= learning_rate * np.dot(hidden.T, d_kl_log_var) + lambda_param * self.weights['W_log_var']
+        self.biases['b_log_var'] -= learning_rate * np.sum(d_kl_log_var, axis=0) + lambda_param * self.biases['b_log_var']
+
+    # Generate new data samples
     def generate(self, num_samples=1):
         z = np.random.randn(num_samples, self.latent_dim)
-        return self.decode(z)
+        return self.decode(z).reshape(num_samples, 50)  # Ensure output shape
 
+    #Generate response vectors
     def generate_response(self, query_vector):
-        # Assume query_vector is the vectorized representation of the user query
-        z = self.reparameterize(*self.encode(query_vector))
+        mean, log_var, _ = self.encode(query_vector.reshape(1, -1))  # Ensure input is 2D
+        z = self.reparameterize(mean, log_var)
         generated_response = self.decode(z)
-        return generated_response
-
-# Example usage:
-# vae = VAE(input_dim=784, latent_dim=2, hidden_dims=[256, 128])
-# vae.train(X_train, epochs=50, learning_rate=0.001, lambda_param=0.001)
-# generated_samples = vae.generate(num_samples=10)
+        return generated_response.flatten()

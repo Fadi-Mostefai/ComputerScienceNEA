@@ -2,21 +2,17 @@ import sys
 import logging
 import sqlite3
 from PyQt5.QtCore import QUrl, Qt
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QListWidget, QListWidgetItem, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QDialogButtonBox, QMessageBox)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QListWidget, QListWidgetItem, QDialog, QLineEdit, QPushButton, QVBoxLayout, QLabel, QMessageBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from googleapiclient.discovery import build
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-# Assuming the database and tables are already created.
-# If not, you'll need to ensure the database creation scripts are executed beforehand.
-
+# Handles the interaction with the Google Custom Search JSON API.
 class GoogleSearch:
     def __init__(self, api_key, cse_id):
         self.api_key = api_key
         self.cse_id = cse_id
 
+    # Allows users to search the web using custom search engines defined in the Google Developer Console
     def search(self, search_term, num_results=10):
         try:
             service = build("customsearch", "v1", developerKey=self.api_key)
@@ -26,17 +22,20 @@ class GoogleSearch:
             print(f"Error during Google Search API call: {e}")
             return []
 
+# Manages user accounts and search history using SQLite, providing methods for user registration, login validation, and search history tracking.
 class DatabaseManager:
     def __init__(self, db_name="search_app.db"):
         self.conn = sqlite3.connect(db_name)
         self.cur = self.conn.cursor()
         self.setup_database()
 
+    # Setup database incase original is corrupted or deleted
     def setup_database(self):
         self.cur.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)''')
         self.cur.execute('''CREATE TABLE IF NOT EXISTS search_history (id INTEGER PRIMARY KEY, user_id INTEGER, link TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
         self.conn.commit()
 
+    # Insert a newly registered user's profile into the database
     def create_user(self, username, password):
         try:
             self.cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
@@ -45,23 +44,28 @@ class DatabaseManager:
         except sqlite3.IntegrityError:
             return False
 
+    # Check whether a user's account is valid
     def validate_login(self, username, password):
         self.cur.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
         return self.cur.fetchone() is not None
 
+    # Add a link and the user id into the search history table
     def save_search_history(self, user_id, link):
         self.cur.execute("INSERT INTO search_history (user_id, link) VALUES (?, ?)", (user_id, link))
         self.conn.commit()
 
+    # Retrieve the search history
     def get_search_history(self, user_id):
         self.cur.execute("SELECT link FROM search_history WHERE user_id=? ORDER BY timestamp DESC", (user_id,))
         return self.cur.fetchall()
 
+    # Fetch and return the user_id
     def get_user_id(self, username):
         self.cur.execute("SELECT id FROM users WHERE username=?", (username,))
         result = self.cur.fetchone()
         return result[0] if result else None
 
+# Logs a user into the database
 class LoginDialog(QDialog):
     def __init__(self, db_manager, parent=None):
         super(LoginDialog, self).__init__(parent)
@@ -100,6 +104,7 @@ class LoginDialog(QDialog):
         else:
             QMessageBox.warning(self, "Login Failed", "Incorrect username or password.")
 
+# Registers a user into the database
 class RegisterDialog(QDialog):
     def __init__(self, db_manager, parent=None):
         super(RegisterDialog, self).__init__(parent)
@@ -146,6 +151,7 @@ class GoogleGUI(QMainWindow):
         self.current_user_id = None
         self.showLoginOrRegisterDialog()
 
+    # Configures the UI components for the search application.
     def initUI(self):
         self.setWindowTitle("Google API Search")
         self.setGeometry(100, 100, 800, 600)
@@ -169,7 +175,7 @@ class GoogleGUI(QMainWindow):
         layout.addWidget(self.historyButton)
         layout.addWidget(self.resultsList)
 
-    # Inside the GoogleGUI class
+    # Displays a dialog asking the user to either log in or register.
     def showLoginOrRegisterDialog(self):
         choice = QMessageBox.question(self, "Login or Register",
                                       "Do you want to login? Click No to register.",
@@ -182,6 +188,7 @@ class GoogleGUI(QMainWindow):
         else:
             self.close()  # Close the application if the user cancels the operation
 
+    # Display dialog for logging in
     def showLoginDialog(self):
         loginDialog = LoginDialog(self.db_manager, self)
         if loginDialog.exec_() == QDialog.Accepted:
@@ -191,6 +198,7 @@ class GoogleGUI(QMainWindow):
         else:
             self.close()  # Close the app if the login dialog is closed without logging in
 
+    # Display dialog for registering a new account
     def showRegisterDialog(self):
         registerDialog = RegisterDialog(self.db_manager, self)
         if registerDialog.exec_() == QDialog.Accepted:
@@ -200,8 +208,7 @@ class GoogleGUI(QMainWindow):
         else:
             self.close()  # Close the app if the registration dialog is closed without registering
 
-
-
+    # Executes a search query using the GoogleSearch instance and displays the results.
     def performSearch(self):
         query = self.searchBar.text()
         if not query.strip():
@@ -211,13 +218,11 @@ class GoogleGUI(QMainWindow):
         try:
             results = self.search_engine.search(query)
             self.displaySearchResults(results)
-            if self.current_user_id:
-                # Assuming you're saving the query or link correctly in your database.
-                self.db_manager.save_search_history(self.current_user_id, query)
         except Exception as e:
             logging.error(f"Failed to perform search: {e}")
             QMessageBox.critical(self, "Error", "Failed to perform search.")
 
+    # Displays the search results in the UI.
     def displaySearchResults(self, results):
         self.resultsList.clear()
         if results:
@@ -227,18 +232,19 @@ class GoogleGUI(QMainWindow):
                 listItem.setData(Qt.UserRole, item['link'])
                 self.resultsList.addItem(listItem)
 
+    # Opens the selected search result in a new browser window.
     def openLink(self, item):
         url = item.data(Qt.UserRole)
         source = item.data(Qt.UserRole + 1)  # Retrieve the source information
         if url:
             if source == "search_result" and self.current_user_id:
-                # Save the click into history only if it's from search results
                 self.db_manager.save_search_history(self.current_user_id, url)
 
             self.browserWindow = QWebEngineView()
             self.browserWindow.load(QUrl(url))
             self.browserWindow.show()
 
+    # Displays the user's search history.
     def showHistory(self):
         if self.current_user_id:
             history = self.db_manager.get_search_history(self.current_user_id)
@@ -248,8 +254,6 @@ class GoogleGUI(QMainWindow):
                 listItem.setData(Qt.UserRole + 1, "history")  # Custom role for source
                 listItem.setData(Qt.UserRole, link[0])
                 self.resultsList.addItem(listItem)
-
-
 
 
 
