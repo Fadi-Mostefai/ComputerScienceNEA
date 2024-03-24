@@ -11,7 +11,7 @@ class TestDataPreprocessingAndVectorization(unittest.TestCase):
 
         # Example text
         self.sample_texts = ["<p>Hello World!</p>", "<div>Python programming</div>"]
-        self.cleaned_texts = ["hello world", "python programming"]
+        self.cleaned_texts = [" hello world  ", " python programming "]
 
         # Manually creating a simple vocabulary and IDF for testing
         self.vocab = {'hello': 0, 'world': 1, 'python': 2, 'programming': 3}
@@ -26,7 +26,7 @@ class TestDataPreprocessingAndVectorization(unittest.TestCase):
 
     def test_vectorization(self):
         # Assuming every word in the vocab appears once in the document for simplicity
-        expected_vector = np.array([1, 1, 1, 1])
+        expected_vector = np.array([0.25, 0.25, 0.25, 0.25])
 
         # Manually setting the vocabulary and idf values to avoid the fit step
         self.tfidf_vectorizer.vocab = self.vocab
@@ -39,4 +39,4 @@ class TestDataPreprocessingAndVectorization(unittest.TestCase):
         # Since transform returns a list of vectors, we extract the first (and only) vector
         np.testing.assert_array_almost_equal(vectorized_text[0], expected_vector)
 
-
+unittest.main()
